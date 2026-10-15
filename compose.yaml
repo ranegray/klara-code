@@ -1,0 +1,26 @@
+# The robot stack on this machine's hardware: ROS 2 Jazzy, the servo bus, and the RealSense.
+services:
+  robot:
+    build:
+      context: docker
+      dockerfile: ros.Dockerfile
+    image: klara-code/ros:jazzy
+    network_mode: host  # DDS discovery across machines
+    ipc: host  # DDS shared-memory transport
+    user: "1000:1000"
+    group_add: [dialout, video, plugdev]
+    volumes:
+      - ./ros2_ws:/ws
+      # All of /dev, so devices plugged in after start-up appear too. The cgroup rules below
+      # decide which ones the container may actually open.
+      - /dev:/dev
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    device_cgroup_rules:
+      - "c 166:* rmw"  # ttyACM: the servo bus adapter
+      - "c 189:* rmw"  # raw USB: the RealSense
+      - "c 81:* rmw"  # video4linux: the RealSense
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    stdin_open: true
+    tty: true
