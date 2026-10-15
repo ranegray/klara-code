@@ -40,6 +40,8 @@ from xlerobot_driver.trajectory import Trajectory
 Result = FollowJointTrajectory.Result
 # control_msgs has no error code for "the driver stopped this motion"; error_string says why.
 STOPPED = Result.PATH_TOLERANCE_VIOLATED
+# Below this speed a gripper counts as stopped, in rad/s.
+STILL_VELOCITY = 0.05
 
 
 class Fault(Exception):
@@ -67,6 +69,8 @@ class Motion:
     goal_time_tolerance: float  # seconds after the trajectory ends to get within goal tolerance
     gripper: bool = False
     start: float | None = None  # bus clock, set when the bus thread picks the motion up
+    still_since: float | None = None  # gripper: motion time at which it stopped moving
+    stalled: bool = False  # gripper: stopped short of its target
     desired: tuple[float, ...] = ()
     actual: tuple[float, ...] = ()
     load: tuple[float, ...] = ()
@@ -90,7 +94,8 @@ class ServoBusDriver(Node):
         self._goal_tolerance = param('goal_tolerance', 0.05).value  # rad
         self._goal_time_tolerance = param('goal_time_tolerance', 1.0).value  # s
         self._gripper_velocity = param('gripper_velocity', 2.0).value  # rad/s
-        self._gripper_settle_time = param('gripper_settle_time', 0.3).value  # s
+        self._gripper_settle_time = param('gripper_settle_time', 0.3).value  # s still = stalled
+        self._gripper_timeout = param('gripper_timeout', 3.0).value  # s after its trajectory ends
         self._gripper_squeeze = param('gripper_squeeze', 0.15).value  # rad past where it stalled
         self._home_velocity = param('home_velocity', 0.8).value  # rad/s
         acceleration = param('acceleration', 30).value  # servo's own cap, 0-254; 0 = none
@@ -260,15 +265,28 @@ class ServoBusDriver(Node):
 
         if all(e <= tol for e, tol in zip(errors, motion.goal_tolerance)):
             return self._finish(motion, Result.SUCCESSFUL, '')
-        if t < motion.trajectory.duration + motion.goal_time_tolerance:
-            return False
+        timed_out = t >= motion.trajectory.duration + motion.goal_time_tolerance
         if motion.gripper:
-            # Stopped short of the target, so it is holding something. Squeeze only a little past
-            # where it stopped, so the servo grips without straining at full torque.
+            # Stalled means the jaw really stopped short of its target, not that it ran late.
             (j,), (target,), (position,) = motion.joints, desired, actual
+            if abs(self._velocities[j.name]) > STILL_VELOCITY:
+                motion.still_since = None
+            elif motion.still_since is None:
+                motion.still_since = t
+            motion.stalled = (motion.still_since is not None
+                              and t - motion.still_since >= self._gripper_settle_time)
+            if not motion.stalled and not timed_out:
+                return False
+            # Holding something, most likely. Squeeze only a little past where it stopped, so the
+            # servo grips without straining at full torque.
             squeeze = min(self._gripper_squeeze, abs(target - position))
             self._setpoints[j.name] = position + math.copysign(squeeze, target - position)
-            return self._finish(motion, Result.GOAL_TOLERANCE_VIOLATED, 'stalled short of target')
+            return self._finish(motion, Result.GOAL_TOLERANCE_VIOLATED,
+                                'stalled short of target' if motion.stalled
+                                else f'still moving {motion.goal_time_tolerance:.1f} s after '
+                                     'its trajectory ended')
+        if not timed_out:
+            return False
         self._hold(motion.joints, actual)
         j, error = max(zip(motion.joints, errors), key=lambda pair: pair[1])
         return self._finish(motion, Result.GOAL_TOLERANCE_VIOLATED,
@@ -353,7 +371,7 @@ class ServoBusDriver(Node):
         def motion(start: tuple[float, ...]) -> Motion:
             duration = max(abs(target - start[0]) / self._gripper_velocity, 0.2)
             return Motion(joints, self._plan(joints, start, [duration], [(target,)]),
-                          None, (self._goal_tolerance,), self._gripper_settle_time, gripper=True)
+                          None, (self._goal_tolerance,), self._gripper_timeout, gripper=True)
 
         try:
             started = self._start(group, joints, motion)
@@ -367,7 +385,7 @@ class ServoBusDriver(Node):
             if started.actual:
                 result.position, result.effort = started.actual[0], started.load[0]
         result.reached_goal = started.error_code == Result.SUCCESSFUL and not started.canceled
-        result.stalled = started.error_code == Result.GOAL_TOLERANCE_VIOLATED
+        result.stalled = started.stalled
         if started.canceled:
             handle.canceled()
         elif result.reached_goal or result.stalled:  # holding an object is a successful grasp
