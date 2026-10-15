@@ -1,0 +1,25 @@
+# XLeRobot bus 1: left arm and head. Joint names match the XLeRobot URDF.
+port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_5A46085646-if00
+baudrate: 1000000
+
+joints:
+  Rotation_L:      {id: 1, sign: 1,  group: left_arm}
+  Pitch_L:         {id: 2, sign: -1, group: left_arm}
+  Elbow_L:         {id: 3, sign: 1,  group: left_arm}
+  Wrist_Pitch_L:   {id: 4, sign: 1,  group: left_arm}
+  Wrist_Roll_L:    {id: 5, sign: -1, group: left_arm}
+  Jaw_L:           {id: 6, sign: 1,  group: left_gripper}
+  head_pan_joint:  {id: 7, sign: -1, group: head}
+  head_tilt_joint: {id: 8, sign: 1,  group: head}
+
+# Named poses, in radians.
+poses:
+  home:
+    Rotation_L: 1.5202
+    Pitch_L: 1.7641
+    Elbow_L: 1.4557
+    Wrist_Pitch_L: 0.8698
+    Wrist_Roll_L: 0.0
+    Jaw_L: -0.0230
+    head_pan_joint: 0.0
+    head_tilt_joint: 0.0
