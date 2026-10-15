@@ -22,5 +22,9 @@ services:
     environment:
       DISPLAY: ${DISPLAY:-:0}
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    command: ros2 launch --noninteractive xlerobot_driver robot.launch.py
+    # ros2 launch shuts its nodes down cleanly only on SIGINT; on SIGTERM it abandons them.
+    stop_signal: SIGINT
+    stop_grace_period: 30s  # the driver drives the arm home before exiting
     stdin_open: true
     tty: true

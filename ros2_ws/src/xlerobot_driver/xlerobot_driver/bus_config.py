@@ -14,6 +14,9 @@ from xlerobot_driver.servo_bus import STEPS_PER_TURN
 ZERO_STEPS = STEPS_PER_TURN // 2
 RADIANS_PER_STEP = 2 * math.pi / STEPS_PER_TURN
 
+# The actions a group can offer. A gripper group has exactly one joint.
+ACTIONS = ('follow_joint_trajectory', 'gripper_command')
+
 
 @dataclass(frozen=True)
 class Joint:
@@ -35,6 +38,7 @@ class BusConfig:
     port: str
     baudrate: int
     joints: tuple[Joint, ...]
+    groups: dict[str, str]  # group name -> action
     poses: dict[str, dict[str, float]]  # pose name -> joint name -> radians
 
     def joint(self, name: str) -> Joint:
@@ -54,6 +58,7 @@ def load_bus_config(path: Path) -> BusConfig:
         Joint(name, servo_id=int(spec['id']), sign=int(spec['sign']), group=str(spec['group']))
         for name, spec in raw['joints'].items()
     )
+    groups = {str(group): str(action) for group, action in raw['groups'].items()}
     poses = {
         pose: {joint: float(radians) for joint, radians in positions.items()}
         for pose, positions in raw.get('poses', {}).items()
@@ -65,6 +70,13 @@ def load_bus_config(path: Path) -> BusConfig:
     for j in joints:
         if j.sign not in (1, -1):
             raise ValueError(f'{path}: {j.name} sign must be 1 or -1, got {j.sign}')
+        if j.group not in groups:
+            raise ValueError(f'{path}: {j.name} is in group {j.group}, which is not under groups')
+    for group, action in groups.items():
+        if action not in ACTIONS:
+            raise ValueError(f'{path}: group {group} has action {action}, not one of {ACTIONS}')
+        if action == 'gripper_command' and sum(j.group == group for j in joints) != 1:
+            raise ValueError(f'{path}: gripper group {group} must have exactly one joint')
     names = {j.name for j in joints}
     for pose, positions in poses.items():
         if unknown := positions.keys() - names:
@@ -75,5 +87,6 @@ def load_bus_config(path: Path) -> BusConfig:
         port=str(raw['port']),
         baudrate=int(raw['baudrate']),
         joints=joints,
+        groups=groups,
         poses=poses,
     )

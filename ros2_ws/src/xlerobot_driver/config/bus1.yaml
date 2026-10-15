@@ -12,6 +12,12 @@ joints:
   head_pan_joint:  {id: 7, sign: -1, group: head}
   head_tilt_joint: {id: 8, sign: 1,  group: head}
 
+# Each group is one controller, <group>_controller, offering one action.
+groups:
+  left_arm: follow_joint_trajectory
+  left_gripper: gripper_command
+  head: follow_joint_trajectory
+
 # Named poses, in radians.
 poses:
   home:

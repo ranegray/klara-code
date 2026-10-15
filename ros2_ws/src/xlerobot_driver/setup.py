@@ -12,8 +12,10 @@ setup(
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
+        ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
+    tests_require=['pytest'],
     zip_safe=True,
     maintainer='Rane Gray',
     maintainer_email='ranegray830@gmail.com',
@@ -22,6 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
             'servo_bus = xlerobot_driver.cli:main',
+            'servo_bus_driver = xlerobot_driver.servo_bus_driver:main',
         ],
     },
 )
