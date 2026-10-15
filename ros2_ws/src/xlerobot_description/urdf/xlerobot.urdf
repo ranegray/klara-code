@@ -1279,4 +1279,31 @@
     <origin xyz="0.025 0 0.03" rpy="0 0 0" />
   </joint>
 
+
+  <!-- Frames added for klara-code. -->
+
+  <!-- base_link: the frame the agent's API uses. On the floor under the cart's center, x toward the
+       robot's front, y left, z up (REP 103/105). The URDF's own chassis frame faces backward. -->
+  <link name="base_link"/>
+  <joint name="base_link_joint" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 3.1415927"/>
+  </joint>
+
+  <!-- tcp: the tool center point, between the left gripper's fingertips about 16 mm back from
+       the tips (estimated from the jaw meshes). z points out of the gripper along its approach,
+       x along the direction the jaw closes. The red sphere marks it in RViz. -->
+  <link name="tcp_L">
+    <visual>
+      <geometry><sphere radius="0.005"/></geometry>
+      <material name="tcp_red"><color rgba="1 0 0 1"/></material>
+    </visual>
+  </link>
+  <joint name="tcp_L_joint" type="fixed">
+    <parent link="Fixed_Jaw"/>
+    <child link="tcp_L"/>
+    <origin xyz="0.008 -0.090 0" rpy="1.5707963 0 0"/>
+  </joint>
+
 </robot>

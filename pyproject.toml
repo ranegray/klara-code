@@ -1,0 +1,13 @@
+[project]
+name = "klara"
+version = "0.0.0"
+description = "Claude Code for robotics."
+requires-python = ">=3.12"
+dependencies = ["numpy>=1.26"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

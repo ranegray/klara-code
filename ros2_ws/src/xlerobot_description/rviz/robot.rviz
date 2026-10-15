@@ -17,6 +17,12 @@ Visualization Manager:
         Value: /robot_description
         Durability Policy: Transient Local
         Reliability Policy: Reliable
+    - Class: rviz_default_plugins/Axes
+      Name: base_link
+      Enabled: true
+      Reference Frame: base_link
+      Length: 0.3
+      Radius: 0.01
   Global Options:
     Background Color: 48; 48; 48
     Fixed Frame: world
