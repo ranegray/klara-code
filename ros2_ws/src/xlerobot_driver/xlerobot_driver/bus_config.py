@@ -10,7 +10,8 @@ import yaml
 
 from xlerobot_driver.servo_bus import STEPS_PER_TURN
 
-# Calibration stores a homing offset on each servo so that this reading means the URDF zero pose.
+# Calibration stores a homing offset on each servo so that a joint's zero_steps reading means the
+# URDF zero pose. Mid-turn by default, so the joint can travel half a turn either way.
 ZERO_STEPS = STEPS_PER_TURN // 2
 RADIANS_PER_STEP = 2 * math.pi / STEPS_PER_TURN
 
@@ -24,12 +25,13 @@ class Joint:
     servo_id: int
     sign: int  # +1 if servo steps increase with the URDF joint angle, -1 if they decrease
     group: str
+    zero_steps: int = ZERO_STEPS  # the reading at URDF zero
 
     def to_radians(self, steps: int) -> float:
-        return self.sign * (steps - ZERO_STEPS) * RADIANS_PER_STEP
+        return self.sign * (steps - self.zero_steps) * RADIANS_PER_STEP
 
     def to_steps(self, radians: float) -> int:
-        return ZERO_STEPS + self.sign * round(radians / RADIANS_PER_STEP)
+        return self.zero_steps + self.sign * round(radians / RADIANS_PER_STEP)
 
 
 @dataclass(frozen=True)
@@ -55,7 +57,8 @@ class BusConfig:
 def load_bus_config(path: Path) -> BusConfig:
     raw = yaml.safe_load(path.read_text())
     joints = tuple(
-        Joint(name, servo_id=int(spec['id']), sign=int(spec['sign']), group=str(spec['group']))
+        Joint(name, servo_id=int(spec['id']), sign=int(spec['sign']), group=str(spec['group']),
+              zero_steps=int(spec.get('zero_steps', ZERO_STEPS)))
         for name, spec in raw['joints'].items()
     )
     groups = {str(group): str(action) for group, action in raw['groups'].items()}
@@ -70,6 +73,8 @@ def load_bus_config(path: Path) -> BusConfig:
     for j in joints:
         if j.sign not in (1, -1):
             raise ValueError(f'{path}: {j.name} sign must be 1 or -1, got {j.sign}')
+        if not 0 <= j.zero_steps < STEPS_PER_TURN:
+            raise ValueError(f'{path}: {j.name} zero_steps must be 0..{STEPS_PER_TURN - 1}')
         if j.group not in groups:
             raise ValueError(f'{path}: {j.name} is in group {j.group}, which is not under groups')
     for group, action in groups.items():

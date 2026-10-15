@@ -4,8 +4,11 @@ baudrate: 1000000
 
 joints:
   Rotation_L:      {id: 1, sign: 1,  group: left_arm}
-  Pitch_L:         {id: 2, sign: -1, group: left_arm}
-  Elbow_L:         {id: 3, sign: 1,  group: left_arm}
+  # Pitch and Elbow travel from about -0.22 to +3.4 rad, half a turn or more past zero. A quarter
+  # turn off mid-turn puts their whole range near the middle of the servo's reading instead of
+  # across 0/4095. Opposite signs, so opposite quarter turns.
+  Pitch_L:         {id: 2, sign: -1, group: left_arm, zero_steps: 3072}
+  Elbow_L:         {id: 3, sign: 1,  group: left_arm, zero_steps: 1024}
   Wrist_Pitch_L:   {id: 4, sign: 1,  group: left_arm}
   Wrist_Roll_L:    {id: 5, sign: -1, group: left_arm}
   Jaw_L:           {id: 6, sign: 1,  group: left_gripper}
@@ -21,11 +24,11 @@ groups:
 # Named poses, in radians.
 poses:
   home:
-    Rotation_L: 1.5202
-    Pitch_L: 1.7641
-    Elbow_L: 1.4557
-    Wrist_Pitch_L: 0.8698
-    Wrist_Roll_L: 0.0
-    Jaw_L: -0.0230
+    Rotation_L: 1.5417
+    Pitch_L: 3.2352
+    Elbow_L: 3.0496
+    Wrist_Pitch_L: 0.9618
+    Wrist_Roll_L: 1.6414
+    Jaw_L: -0.3896
     head_pan_joint: 0.0
     head_tilt_joint: 0.0

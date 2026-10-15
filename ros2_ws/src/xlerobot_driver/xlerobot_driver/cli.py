@@ -12,7 +12,7 @@ from pathlib import Path
 import select
 import sys
 
-from xlerobot_driver.bus_config import BusConfig, Joint, load_bus_config, ZERO_STEPS
+from xlerobot_driver.bus_config import BusConfig, Joint, load_bus_config
 from xlerobot_driver.servo_bus import (
     BusError, Calibration, ServoBus, ServoState, STEPS_PER_TURN, TORQUE_ENABLE)
 
@@ -87,19 +87,20 @@ def calibrate(bus: ServoBus, joints: tuple[Joint, ...]) -> None:
           'Hold them at the URDF zero pose, then press Enter.')
 
     # Present position = raw position - homing offset (mod one turn). Choose the offset that
-    # makes the current raw position read ZERO_STEPS, and open the range fully until the sweep
-    # records it.
+    # makes the current raw position read the joint's zero_steps, kept within the register's
+    # +-2047, and open the range fully until the sweep records it.
     offsets = {}
     states = _read(bus, ids)
     for j in joints:
         old_offset = bus.read_calibration(j.servo_id).homing_offset
         raw = (states[j.servo_id].position + old_offset) % STEPS_PER_TURN
-        offsets[j.servo_id] = raw - ZERO_STEPS
+        half = STEPS_PER_TURN // 2
+        offsets[j.servo_id] = (raw - j.zero_steps + half) % STEPS_PER_TURN - half
         bus.write_calibration(j.servo_id, Calibration(offsets[j.servo_id], 0, STEPS_PER_TURN - 1))
     states = _read(bus, ids)
     for j in joints:
         print(f'  {j.name}: zero stored, now reads {states[j.servo_id].position} '
-              f'(target {ZERO_STEPS})')
+              f'(target {j.zero_steps})')
 
     print('Move each joint slowly through its full range, then press Enter.')
     low, high = _sweep(bus, joints)

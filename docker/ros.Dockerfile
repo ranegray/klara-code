@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pip \
         ros-jazzy-control-msgs \
         ros-jazzy-realsense2-camera \
+        ros-jazzy-robot-state-publisher \
+        ros-jazzy-rviz2 \
     && rm -rf /var/lib/apt/lists/*
 
 # The Feetech SDK is only on PyPI. ROS uses the system Python, so install it there.

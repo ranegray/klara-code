@@ -33,7 +33,8 @@ from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from xlerobot_driver.bus_config import Joint, load_bus_config, RADIANS_PER_STEP
-from xlerobot_driver.servo_bus import ACCELERATION, BusError, ServoBus, ServoState, STEPS_PER_TURN
+from xlerobot_driver.servo_bus import (
+    ACCELERATION, BusError, ServoBus, ServoState, STEPS_PER_TURN, TORQUE_ENABLE)
 from xlerobot_driver.trajectory import Trajectory
 
 Result = FollowJointTrajectory.Result
@@ -93,6 +94,8 @@ class ServoBusDriver(Node):
         self._gripper_squeeze = param('gripper_squeeze', 0.15).value  # rad past where it stalled
         self._home_velocity = param('home_velocity', 0.8).value  # rad/s
         acceleration = param('acceleration', 30).value  # servo's own cap, 0-254; 0 = none
+        # False: only publish joint states, and never turn torque on. For moving joints by hand.
+        self._enable_torque = param('enable_torque', True).value
 
         self._config = load_bus_config(Path(config_path))
         self._joints = self._config.joints
@@ -126,11 +129,15 @@ class ServoBusDriver(Node):
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name='bus', daemon=True)
         self._thread.start()
-        self.get_logger().info(
-            f'{self._config.name}: torque on, holding; controllers {list(self._config.groups)}')
+        if self._enable_torque:
+            self.get_logger().info(f'{self._config.name}: torque on, holding; '
+                                   f'controllers {list(self._config.groups)}')
+        else:
+            self.get_logger().info(f'{self._config.name}: enable_torque is false; '
+                                   'publishing joint states only')
 
     def _start_bus(self, acceleration: int) -> None:
-        """Read limits and positions, check it's safe, then turn torque on holding still."""
+        """Read limits and positions. With torque enabled, check it's safe, then hold still."""
         self._step_limits: dict[str, tuple[int, int]] = {}
         self._limits: dict[str, tuple[float, float]] = {}  # rad, low to high
         for j in self._joints:
@@ -143,6 +150,21 @@ class ServoBusDriver(Node):
         if silent := [j.name for j in self._joints if states[j.servo_id] is None]:
             raise Fault(f'no reply from {silent}')
         self._steps = {j.name: states[j.servo_id].position for j in self._joints}
+        self._positions = {j.name: j.to_radians(self._steps[j.name]) for j in self._joints}
+        self._velocities = dict.fromkeys(self._positions, 0.0)
+        self._loads = dict.fromkeys(self._positions, 0.0)
+        self._setpoints = dict(self._positions)
+
+        home = self._config.poses.get('home', {})
+        for j in self._joints:
+            lo, hi = self._limits[j.name]
+            if not lo <= home.get(j.name, math.nan) <= hi:
+                raise ValueError(f'home pose needs {j.name} within {lo:.3f}..{hi:.3f} rad')
+        if not self._enable_torque:
+            if on := [j.name for j in self._joints if self._bus.read(j.servo_id, TORQUE_ENABLE)]:
+                self.get_logger().warn(f'torque is still on for {on}; run `servo_bus torque-off` '
+                                       'to move them by hand')
+            return
 
         # A servo caps a goal outside its range at the limit, so turning torque on to hold a
         # joint that is outside would snap it to the limit.
@@ -154,16 +176,6 @@ class ServoBusDriver(Node):
         if outside:
             raise Fault(f'refusing to turn torque on, joints outside their range: '
                         f'{"; ".join(outside)}. Move them back by hand and restart.')
-        home = self._config.poses.get('home', {})
-        for j in self._joints:
-            lo, hi = self._limits[j.name]
-            if not lo <= home.get(j.name, math.nan) <= hi:
-                raise ValueError(f'home pose needs {j.name} within {lo:.3f}..{hi:.3f} rad')
-
-        self._positions = {j.name: j.to_radians(self._steps[j.name]) for j in self._joints}
-        self._velocities = dict.fromkeys(self._positions, 0.0)
-        self._loads = dict.fromkeys(self._positions, 0.0)
-        self._setpoints = dict(self._positions)
         for j in self._joints:
             self._bus.write(j.servo_id, ACCELERATION, acceleration)
         self._bus.write_goal_positions({j.servo_id: self._steps[j.name] for j in self._joints})
@@ -200,7 +212,7 @@ class ServoBusDriver(Node):
                 self._velocities[j.name] = j.sign * state.velocity * RADIANS_PER_STEP
                 self._loads[j.name] = j.sign * state.load / 1000  # fraction of max torque
             goals = None
-            if self._fault is None:
+            if self._fault is None and self._enable_torque:
                 for key, motion in list(self._motions.items()):
                     if motion.start is None:
                         motion.start = now
@@ -372,6 +384,8 @@ class ServoBusDriver(Node):
                 raise InvalidGoal(STOPPED, f'hardware fault: {self._fault}')
             if self._closing:
                 raise InvalidGoal(STOPPED, 'driver is shutting down')
+            if not self._enable_torque:
+                raise InvalidGoal(STOPPED, 'torque is disabled (enable_torque is false)')
             if key in self._motions:
                 raise InvalidGoal(Result.INVALID_GOAL,
                                   f'{key} is already moving; wait for that result or cancel it')
@@ -417,6 +431,11 @@ class ServoBusDriver(Node):
 
     def shutdown(self) -> None:
         """Go home, then turn torque off. If home can't be reached, keep holding with torque on."""
+        if not self._enable_torque:
+            self._stop.set()
+            self._thread.join()
+            self._bus.close()
+            return
         with self._lock:
             self._closing = True
             for motion in self._motions.values():
