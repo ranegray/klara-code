@@ -11,6 +11,8 @@ services:
     group_add: [dialout, video, plugdev]
     volumes:
       - ./ros2_ws:/ws
+      # The agent harness. Read-only: the agent's code can't change the harness it runs in.
+      - ./klara:/opt/klara/klara:ro
       # All of /dev, so devices plugged in after start-up appear too. The cgroup rules below
       # decide which ones the container may actually open.
       - /dev:/dev
@@ -22,6 +24,7 @@ services:
     environment:
       DISPLAY: ${DISPLAY:-:0}
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      PYTHONPATH: /opt/klara
     command: ros2 launch --noninteractive xlerobot_driver robot.launch.py
     # ros2 launch shuts its nodes down cleanly only on SIGINT; on SIGTERM it abandons them.
     stop_signal: SIGINT

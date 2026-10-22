@@ -33,6 +33,8 @@ from xlerobot_driver.bus_config import load_bus_config
 from klara.kinematics import Arm, Pose
 
 ARM, GRIPPER = 'left_arm', 'left_gripper'  # groups in the bus config
+ARM_ACTION = f'{ARM}_controller/follow_joint_trajectory'
+GRIPPER_ACTION = f'{GRIPPER}_controller/gripper_cmd'
 
 LINE_SPEED = 0.05  # m/s, the gripper along a straight line
 TURN_SPEED = math.radians(30)  # rad/s, the gripper's pitch and roll along a line
@@ -125,9 +127,8 @@ class Robot:
         self._positions: dict[str, float] = {}
         self._received: float | None = None  # time.monotonic() of the latest joint states
         node.create_subscription(JointState, 'joint_states', self._on_joint_states, 10)
-        self._trajectory = ActionClient(node, FollowJointTrajectory,
-                                        f'{ARM}_controller/follow_joint_trajectory')
-        self._gripper = ActionClient(node, GripperCommand, f'{GRIPPER}_controller/gripper_cmd')
+        self._trajectory = ActionClient(node, FollowJointTrajectory, ARM_ACTION)
+        self._gripper = ActionClient(node, GripperCommand, GRIPPER_ACTION)
         for client in (self._trajectory, self._gripper):
             if not client.wait_for_server(timeout):
                 raise RobotError('servo_bus_driver is not running, or its torque is off')
