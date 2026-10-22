@@ -21,7 +21,7 @@ groups:
   left_gripper: gripper_command
   head: follow_joint_trajectory
 
-# Named poses, in radians.
+# Named poses, in radians. home is where the driver parks the robot before turning torque off.
 poses:
   home:
     Rotation_L: 1.5417
@@ -32,3 +32,11 @@ poses:
     Jaw_L: -0.3896
     head_pan_joint: 0.0
     head_tilt_joint: 0.0
+  # Where the agent starts every task: gripper 30 cm forward, 17 cm left, 85 cm up, pointing 60
+  # degrees down, with room to move every way. Arm joints only.
+  ready:
+    Rotation_L: 1.5384
+    Pitch_L: 2.0686
+    Elbow_L: 2.3093
+    Wrist_Pitch_L: 0.7997
+    Wrist_Roll_L: 1.6416

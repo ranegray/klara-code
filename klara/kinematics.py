@@ -147,6 +147,18 @@ class Arm:
         """Joint waypoints that move the tool in a straight line from where it is to target."""
         start = self.pose(q_start)
         turn = _wrap(target.roll - start.roll)
+        plan = self._line(q_start, start, target, turn, step, angle_step)
+        if not plan.ok and turn != 0:
+            # Rolling the short way round can run the wrist into its limit when the long way
+            # wouldn't.
+            longer = self._line(q_start, start, target, turn - math.copysign(2 * math.pi, turn),
+                                step, angle_step)
+            if longer.ok:
+                return longer
+        return plan
+
+    def _line(self, q_start: np.ndarray, start: Pose, target: Pose, turn: float, step: float,
+              angle_step: float) -> LinePlan:
         n = max(1, math.ceil(max(np.linalg.norm(target.position - start.position) / step,
                                  abs(target.pitch - start.pitch) / angle_step,
                                  abs(turn) / angle_step)))

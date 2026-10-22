@@ -6,6 +6,9 @@ bus; they hand motions to that thread and wait for the outcome.
 
 Each group in the bus config becomes a controller offering one action:
 /<group>_controller/follow_joint_trajectory, or /<group>_controller/gripper_cmd for a gripper.
+
+Each joint's range, as calibrated on its servo, is the read-only parameter limits.<joint>:
+[low, high] in radians. Goals outside it are refused, so planners should stay inside it.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from typing import Callable
 
 from ament_index_python.packages import get_package_share_directory
 from control_msgs.action import FollowJointTrajectory, GripperCommand
+from rcl_interfaces.msg import ParameterDescriptor
 import rclpy
 from rclpy.action import ActionServer, CancelResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -117,6 +121,9 @@ class ServoBusDriver(Node):
             self._bus.close()
             raise
 
+        for name, (lo, hi) in self._limits.items():
+            self.declare_parameter(f'limits.{name}', [lo, hi],
+                                   ParameterDescriptor(read_only=True))
         self._joint_states = self.create_publisher(JointState, 'joint_states', 10)
         callbacks = ReentrantCallbackGroup()
         for group, action in self._config.groups.items():
