@@ -11,9 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-rviz2 \
     && rm -rf /var/lib/apt/lists/*
 
-# The Feetech SDK is only on PyPI. ROS uses the system Python, so install it there.
-RUN pip3 install --no-cache-dir --break-system-packages feetech-servo-sdk==1.0.0
+# The Feetech SDK and the Anthropic SDK are only on PyPI. ROS uses the system Python, so install
+# them there.
+RUN pip3 install --no-cache-dir --break-system-packages \
+        anthropic==1.12.1 \
+        feetech-servo-sdk==1.0.0
 
 COPY entrypoint.sh /entrypoint.sh
+COPY klara /usr/local/bin/klara
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]

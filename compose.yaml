@@ -13,6 +13,8 @@ services:
       - ./ros2_ws:/ws
       # The agent harness. Read-only: the agent's code can't change the harness it runs in.
       - ./klara:/opt/klara/klara:ro
+      # Session logs. Create runs/ before the first start, or Docker creates it owned by root.
+      - ./runs:/opt/klara/runs
       # All of /dev, so devices plugged in after start-up appear too. The cgroup rules below
       # decide which ones the container may actually open.
       - /dev:/dev
@@ -21,6 +23,10 @@ services:
       - "c 166:* rmw"  # ttyACM: the servo bus adapter
       - "c 189:* rmw"  # raw USB: the RealSense
       - "c 81:* rmw"  # video4linux: the RealSense
+    # ANTHROPIC_API_KEY for the agent. Only the container sees it.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DISPLAY: ${DISPLAY:-:0}
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}

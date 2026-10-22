@@ -1,0 +1,6 @@
+#!/bin/bash
+# The agent's command: docker compose exec robot klara "task". exec skips the entrypoint, which is
+# where ROS is normally set up, so set it up here.
+source /opt/ros/jazzy/setup.bash
+source /ws/install/setup.bash
+exec python3 -m klara "$@"

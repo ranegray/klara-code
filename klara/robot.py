@@ -15,6 +15,7 @@ from pathlib import Path
 import threading
 import time
 
+from action_msgs.msg import GoalStatus
 from ament_index_python.packages import get_package_share_directory
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory, GripperCommand
@@ -23,7 +24,7 @@ import numpy as np
 from rcl_interfaces.msg import ParameterType
 import rclpy
 from rclpy.action import ActionClient
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter_client import AsyncParameterClient
 from sensor_msgs.msg import JointState
@@ -111,7 +112,7 @@ class Robot:
         if self._owns_rclpy:
             rclpy.init()
         self._node = Node('klara_robot')
-        self._executor = MultiThreadedExecutor()
+        self._executor = SingleThreadedExecutor()  # handles each message before it stops
         self._executor.add_node(self._node)
         self._spinning = threading.Thread(target=self._executor.spin, daemon=True)
         self._spinning.start()
@@ -273,6 +274,8 @@ class Robot:
             JointTrajectoryPoint(positions=[float(v) for v in q], time_from_start=_duration(t))
             for q, t in zip(waypoints, times)]
         result = self._run(self._trajectory, goal, times[-1])
+        if result is None:
+            raise RobotError('the move was cancelled before it finished')
         if result.error_code == FollowJointTrajectory.Result.SUCCESSFUL:
             return
         # The driver reports a stop for its own reasons (a fault, shutting down) with the same
@@ -289,21 +292,25 @@ class Robot:
         with self._lock:
             duration = abs(target - self._positions[self._jaw]) / JOINT_SPEED
         result = self._run(self._gripper, goal, duration)
+        if result is None:
+            raise RobotError('the gripper was cancelled before it finished')
         if not (result.reached_goal or result.stalled):
             raise RobotError('the gripper did not finish moving')
         return result
 
     def _run(self, client: ActionClient, goal, duration: float):
-        """Send a goal and wait for its result, allowing for the driver's extra time to settle."""
+        """Send a goal and wait for its result, or None if it was cancelled along the way."""
         handle = _wait_for(client.send_goal_async(goal), ANSWER_TIMEOUT)
         if not handle.accepted:
             raise RobotError('servo_bus_driver turned the goal down')
         try:
-            return _wait_for(handle.get_result_async(), duration + ANSWER_TIMEOUT).result
+            # Allow for the driver's extra time to settle at the end.
+            response = _wait_for(handle.get_result_async(), duration + ANSWER_TIMEOUT)
         except BaseException:
             # Interrupted or timed out: stop the motion rather than leave it running.
             handle.cancel_goal_async()
             raise
+        return None if response.status == GoalStatus.STATUS_CANCELED else response.result
 
     # Planning.
 

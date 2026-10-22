@@ -25,6 +25,7 @@ from typing import Callable
 from action_msgs.srv import CancelGoal
 import numpy as np
 import rclpy
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.signals import SignalHandlerOptions
 
 from klara.robot import (
@@ -61,6 +62,8 @@ class CodeRunner:
         if self._owns_rclpy:
             rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
         self._node = rclpy.create_node('klara_runner')
+        self._executor = SingleThreadedExecutor()  # its own, to shut down before the node goes
+        self._executor.add_node(self._node)
         self._cancels = [self._node.create_client(CancelGoal, f'{action}/_action/cancel_goal')
                          for action in (ARM_ACTION, GRIPPER_ACTION)]
         # A fresh interpreter, rather than a copy of this one with its ROS connections.
@@ -81,17 +84,23 @@ class CodeRunner:
             done = self._collect(output, started + timeout)
             if done is None:
                 stopped = f'timed out after {timeout:g} s'
-                os.kill(self._process.pid, signal.SIGINT)  # KeyboardInterrupt, in the code
-                done = self._collect(output, time.monotonic() + INTERRUPT_GRACE)
+                done = self._interrupt(output)
+        except KeyboardInterrupt:
+            # Ctrl-C here: stop the run the same way, then pass the Ctrl-C on.
+            if self._interrupt(output) is None:
+                self._process.kill()
+                self._process.join()
+            self.stop_robot()
+            raise
         except (EOFError, OSError):
             self._process.join(1.0)
             done, stopped = None, f'the worker died (exit code {self._process.exitcode})'
 
-        if stopped:
-            self.stop_robot()
         if done is None:  # it never stopped, or it died; the next run starts a new worker
             self._process.kill()
             self._process.join()
+        if stopped:  # after the kill, so the code can't start another motion
+            self.stop_robot()
         return RunResult(
             output=_tail(''.join(output)),
             value=done and done['value'] and _tail(done['value']),
@@ -106,7 +115,7 @@ class CodeRunner:
             if client.wait_for_service(timeout_sec=1.0):
                 # An empty request, with no goal ID and no time, cancels every goal.
                 future = client.call_async(CancelGoal.Request())
-                rclpy.spin_until_future_complete(self._node, future, timeout_sec=2.0)
+                self._executor.spin_until_future_complete(future, timeout_sec=2.0)
 
     def close(self) -> None:
         if self._process.is_alive():
@@ -115,6 +124,7 @@ class CodeRunner:
             if self._process.is_alive():
                 self._process.kill()
                 self._process.join()
+        self._executor.shutdown()
         self._node.destroy_node()
         if self._owns_rclpy:
             rclpy.shutdown()
@@ -141,6 +151,11 @@ class CodeRunner:
             self._process.kill()
             self._process.join()
             raise RobotError(str(e) or 'the worker died while starting') from e
+
+    def _interrupt(self, output: list[str]) -> dict | None:
+        """Raise KeyboardInterrupt in the running code, and give it a moment to stop."""
+        os.kill(self._process.pid, signal.SIGINT)
+        return self._collect(output, time.monotonic() + INTERRUPT_GRACE)
 
     def _collect(self, output: list[str], deadline: float) -> dict | None:
         """Gather what the worker sends until its run is done (its result) or the deadline (None)."""
@@ -174,6 +189,10 @@ def _serve(conn) -> None:
     # The parent interrupts a run with SIGINT. Without ROS's signal handling, that raises
     # KeyboardInterrupt in the code (and the robot cancels its motion) instead of shutting ROS down.
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
+    # Its own process group, so Ctrl-C at the terminal reaches only the parent, which then
+    # interrupts the code itself. One path for every stop.
+    os.setpgrp()
+    os.environ.pop('ANTHROPIC_API_KEY', None)  # the agent's code has no use for it
     try:
         robot = Robot()
     except Exception as e:
